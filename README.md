@@ -2,7 +2,8 @@
 
 A lightweight, customizable screenshot utility designed for capturing content in portrait or landscape aspect ratios - perfect for creating content for YouTube Shorts, TikTok, Instagram Reels, or standard video formats.
 
-![Screenshot Tool Demo](demo.gif) <!-- Add a demo gif if you have one -->
+<img width="452" height="400" alt="portraitScreenshotsTool" src="https://github.com/user-attachments/assets/4c336107-2994-408f-b92b-757d9f9a36c6" />
+
 
 ## Features
 
@@ -57,13 +58,13 @@ sudo python main.py
 
 1. Launch the application
 2. Configure your preferred settings (optional)
-3. Press the hotkey (`Ctrl+Shift+P` by default) or click "Capture Now"
+3. Press the hotkey (`ctrl+alt+P` by default) or click "Capture Now"
 4. Drag the purple rectangle to position it over your desired capture area
 5. Press `Enter` to capture, or `Esc` to cancel
 
 ### Settings
 
-- **Hotkey**: Customize the keyboard shortcut (e.g., `ctrl+shift+p`, `ctrl+alt+s`)
+- **Hotkey**: Customize the keyboard shortcut (e.g., `ctrl+alt+p`, `ctrl+alt+s`)
 - **Save Location**: Choose where screenshots are saved
 - **Dimensions**: Set custom width and height
 - **Lock Aspect Ratio**: Maintain 9:16 or 16:9 ratio automatically
@@ -82,7 +83,7 @@ Settings are automatically saved to `~/.portrait_screenshot_settings.json`
 Default settings:
 ```json
 {
-  "hotkey": "ctrl+shift+p",
+  "hotkey": "ctrl+alt+p",
   "save_location": "~/Screenshots",
   "portrait_width": 608,
   "portrait_height": 1080,
@@ -140,11 +141,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Inspired by the need for quick portrait-oriented screenshots
-- Built for content creators working with vertical video formats
 
 ## Support
 
