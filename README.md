@@ -26,7 +26,7 @@ A lightweight, customizable screenshot utility designed for capturing content in
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/portrait-screenshot-tool.git
+git remote add origin https://github.com/gjdragon/portraitScreenshotTool.git
 cd portrait-screenshot-tool
 ```
 
@@ -148,7 +148,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Support
 
-If you encounter any issues or have suggestions, please [open an issue](https://github.com/yourusername/portrait-screenshot-tool/issues).
+If you encounter any issues or have suggestions, please [open an issue](git remote add origin https://github.com/gjdragon/portraitScreenshotTool/issues).
 
 ---
 
