@@ -27,7 +27,7 @@ A lightweight, customizable screenshot utility designed for capturing content in
 1. Clone this repository:
 ```bash
 git remote add origin https://github.com/gjdragon/portraitScreenshotTool.git
-cd portrait-screenshot-tool
+cd portraitScreenshotTool
 ```
 
 2. Install dependencies:
@@ -37,14 +37,14 @@ pip install -r requirements.txt
 
 3. Run the application:
 ```bash
-python v5-ratio-option.py
+python main.py
 ```
 
 ### Platform-Specific Notes
 
 **Linux**: You may need to run with sudo for keyboard hooks:
 ```bash
-sudo python v5-ratio-option.py
+sudo python main.py
 ```
 
 **macOS**: Grant accessibility permissions when prompted.
