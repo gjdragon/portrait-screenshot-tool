@@ -1,0 +1,682 @@
+import sys
+import os
+import threading
+import time
+from datetime import datetime
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, 
+                             QSystemTrayIcon, QMenu, QAction, QVBoxLayout, 
+                             QHBoxLayout, QLineEdit, QPushButton, QSpinBox, 
+                             QFileDialog, QMessageBox, QGroupBox, QCheckBox,
+                             QRadioButton, QButtonGroup)
+from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QTimer, QThread
+from PyQt5.QtGui import QPainter, QColor, QPen, QPixmap, QIcon
+import keyboard
+import json
+import logging
+
+# Setup logging for debugging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class HotkeyThread(QThread):
+    """Run keyboard hooks in a separate thread to prevent blocking the UI"""
+    hotkey_triggered = pyqtSignal()
+    
+    def __init__(self, hotkey):
+        super().__init__()
+        self.hotkey = hotkey
+        self.is_running = False
+        self.daemon = True
+    
+    def run(self):
+        try:
+            self.is_running = True
+            logger.info(f"Hotkey thread started for: {self.hotkey}")
+            keyboard.add_hotkey(self.hotkey, self._on_hotkey)
+            # Keep thread alive
+            while self.is_running:
+                time.sleep(0.1)
+        except Exception as e:
+            logger.error(f"Error in hotkey thread: {e}")
+        finally:
+            logger.info("Hotkey thread ended")
+    
+    def _on_hotkey(self):
+        """Emit signal when hotkey is pressed"""
+        self.hotkey_triggered.emit()
+    
+    def stop(self):
+        """Stop the hotkey thread"""
+        self.is_running = False
+        try:
+            keyboard.unhook_all()
+        except Exception as e:
+            logger.error(f"Error stopping hotkey thread: {e}")
+        self.wait()
+
+
+class CaptureOverlay(QWidget):
+    capture_signal = pyqtSignal(QRect)
+    close_signal = pyqtSignal()
+    
+    def __init__(self, settings):
+        super().__init__()
+        self.settings = settings
+        
+        # Make overlay truly block everything behind it
+        self.setWindowFlags(
+            Qt.WindowStaysOnTopHint | 
+            Qt.FramelessWindowHint | 
+            Qt.Tool |
+            Qt.BypassWindowManagerHint  # Bypass window manager for full control
+        )
+        
+        # Don't use translucent background - we'll paint everything ourselves
+        self.setWindowState(Qt.WindowFullScreen)
+        
+        # Grab all mouse and keyboard input
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.grabKeyboard()
+        self.grabMouse()
+        
+        # Get all screens and create combined geometry
+        self.screens = QApplication.screens()
+        self.setup_full_desktop_geometry()
+        
+        # Calculate capture rectangle
+        width = settings.get('portrait_width', 1080)
+        height = settings.get('portrait_height', 1920)
+        
+        # Find screen with mouse cursor
+        from PyQt5.QtGui import QCursor
+        mouse_pos = QCursor.pos()
+        screen = QApplication.screenAt(mouse_pos)
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        
+        screen_geom = screen.geometry()
+        screen_width = screen_geom.width()
+        screen_height = screen_geom.height()
+        screen_left = screen_geom.left()
+        screen_top = screen_geom.top()
+        
+        logger.info(f"Active screen: left={screen_left}, top={screen_top}, w={screen_width}, h={screen_height}")
+        logger.info(f"Full desktop offset: {self.full_desktop_offset.x()}, {self.full_desktop_offset.y()}")
+        logger.info(f"Capture size: w={width}, h={height}")
+        
+        # Center horizontally within active screen
+        x = screen_left + (screen_width - width) // 2
+        
+        # Center vertically within active screen
+        y = screen_top + (screen_height - height) // 2
+        
+        # Clamp to ensure rectangle stays within screen bounds
+        x = max(screen_left, min(x, screen_left + screen_width - width))
+        y = max(screen_top, min(y, screen_top + screen_height - height))
+        
+        self.capture_rect = QRect(int(x), int(y), int(width), int(height))
+        logger.info(f"Capture rect (absolute): x={int(x)}, y={int(y)}, w={int(width)}, h={int(height)}")
+        self.dragging = False
+        self.drag_offset = QPoint()
+        
+        # Capture all screens
+        self.capture_screens()
+        
+    def setup_full_desktop_geometry(self):
+        """Set geometry to cover all monitors"""
+        min_x = min_y = float('inf')
+        max_x = max_y = float('-inf')
+        
+        for screen in self.screens:
+            geom = screen.geometry()
+            min_x = min(min_x, geom.x())
+            min_y = min(min_y, geom.y())
+            max_x = max(max_x, geom.x() + geom.width())
+            max_y = max(max_y, geom.y() + geom.height())
+        
+        width = int(max_x - min_x)
+        height = int(max_y - min_y)
+        
+        self.setGeometry(int(min_x), int(min_y), width, height)
+        self.full_desktop_offset = QPoint(int(min_x), int(min_y))
+        
+        logger.info(f"Full desktop geometry set: x={int(min_x)}, y={int(min_y)}, w={width}, h={height}")
+    
+    def capture_screens(self):
+        """Capture all screens into a single pixmap"""
+        try:
+            width = self.width()
+            height = self.height()
+            self.screen_pixmap = QPixmap(width, height)
+            self.screen_pixmap.fill(Qt.black)
+            
+            painter = QPainter(self.screen_pixmap)
+            for screen in self.screens:
+                geom = screen.geometry()
+                screen_shot = screen.grabWindow(0)
+                x = geom.x() - self.full_desktop_offset.x()
+                y = geom.y() - self.full_desktop_offset.y()
+                painter.drawPixmap(int(x), int(y), screen_shot)
+            painter.end()
+        except Exception as e:
+            logger.error(f"Error capturing screens: {e}")
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        
+        # Fill entire screen with semi-transparent dark overlay
+        # This blocks visibility and interaction with windows behind
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 180))
+        
+        # Draw the screenshot preview in the capture area
+        if hasattr(self, 'screen_pixmap'):
+            painter.drawPixmap(self.capture_rect, self.screen_pixmap, self.capture_rect)
+        
+        # Draw border around capture area
+        pen = QPen(QColor(147, 51, 234), 4)
+        painter.setPen(pen)
+        painter.drawRect(self.capture_rect)
+        
+        # Draw corner markers
+        corner_size = 12
+        painter.setBrush(QColor(147, 51, 234))
+        corners = [
+            self.capture_rect.topLeft(),
+            self.capture_rect.topRight(),
+            self.capture_rect.bottomLeft(),
+            self.capture_rect.bottomRight()
+        ]
+        for corner in corners:
+            painter.drawEllipse(corner, corner_size, corner_size)
+        
+        # Draw dimensions label
+        painter.setPen(Qt.white)
+        dim_text = f"{self.capture_rect.width()} × {self.capture_rect.height()} px"
+        text_rect = painter.fontMetrics().boundingRect(dim_text)
+        text_x = self.capture_rect.center().x() - text_rect.width() // 2
+        text_y = self.capture_rect.top() - 20
+        
+        bg_rect = QRect(text_x - 10, text_y - text_rect.height() - 5, 
+                       text_rect.width() + 20, text_rect.height() + 10)
+        painter.fillRect(bg_rect, QColor(147, 51, 234))
+        painter.drawText(text_x, text_y, dim_text)
+        
+        # CHANGED: Updated instructions to reflect new drag behavior
+        instructions = "ENTER = Capture  |  ESC = Cancel  |  Click and drag to move"
+        inst_rect = painter.fontMetrics().boundingRect(instructions)
+        inst_x = self.width() // 2 - inst_rect.width() // 2
+        inst_y = self.height() - 50
+        
+        inst_bg = QRect(inst_x - 20, inst_y - inst_rect.height() - 10,
+                       inst_rect.width() + 40, inst_rect.height() + 20)
+        painter.fillRect(inst_bg, QColor(30, 41, 59, 230))
+        painter.drawText(inst_x, inst_y, instructions)
+    
+    def mousePressEvent(self, event):
+        # Only allow interaction with the capture rectangle
+        # All clicks outside are blocked
+        if self.capture_rect.contains(event.pos()):
+            self.dragging = True
+            self.drag_offset = event.pos() - self.capture_rect.topLeft()
+            self.setCursor(Qt.ClosedHandCursor)
+        # If clicked outside, do nothing - effectively blocking the click
+    
+    def mouseMoveEvent(self, event):
+        if self.dragging:
+            # CHANGED: Calculate new position based on drag offset
+            new_pos = event.pos() - self.drag_offset
+            
+            # Clamp within the full desktop bounds
+            min_x = 0
+            min_y = 0
+            max_x = self.width() - self.capture_rect.width()
+            max_y = self.height() - self.capture_rect.height()
+            
+            new_pos.setX(max(min_x, min(new_pos.x(), max_x)))
+            new_pos.setY(max(min_y, min(new_pos.y(), max_y)))
+            self.capture_rect.moveTo(new_pos)
+            self.update()
+        else:
+            # CHANGED: Show open hand cursor when hovering over rectangle
+            if self.capture_rect.contains(event.pos()):
+                self.setCursor(Qt.OpenHandCursor)
+            else:
+                self.setCursor(Qt.CrossCursor)
+    
+    def mouseReleaseEvent(self, event):
+        if self.dragging:
+            self.dragging = False
+            # CHANGED: Update cursor after releasing
+            if self.capture_rect.contains(event.pos()):
+                self.setCursor(Qt.OpenHandCursor)
+            else:
+                self.setCursor(Qt.CrossCursor)
+    
+    def keyPressEvent(self, event):
+        if not event.isAutoRepeat():  # Ignore key repeat events
+            if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+                self.capture_and_save()
+            elif event.key() == Qt.Key_Escape:
+                self.close()
+    
+    def closeEvent(self, event):
+        """Release mouse and keyboard grab when closing"""
+        try:
+            self.releaseMouse()
+            self.releaseKeyboard()
+        except:
+            pass
+        super().closeEvent(event)
+    
+    def capture_and_save(self):
+        try:
+            # Release mouse and keyboard grabs BEFORE showing dialog
+            self.releaseMouse()
+            self.releaseKeyboard()
+            
+            captured = self.screen_pixmap.copy(self.capture_rect)
+            
+            save_dir = self.settings.get('save_location', 
+                                        os.path.join(os.path.expanduser('~'), 'Screenshots'))
+            os.makedirs(save_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            filename = f"Portrait_{timestamp}.png"
+            filepath = os.path.join(save_dir, filename)
+            
+            if captured.save(filepath, 'PNG'):
+                self.capture_signal.emit(self.capture_rect)
+                QMessageBox.information(self, "Saved", 
+                                      f"Screenshot saved:\n{filepath}")
+            else:
+                QMessageBox.warning(self, "Error", "Failed to save screenshot")
+        except Exception as e:
+            logger.error(f"Error during capture: {e}")
+            QMessageBox.warning(self, "Error", f"Capture failed: {str(e)}")
+        finally:
+            self.close()
+
+
+class PortraitScreenshotApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.settings = self.load_settings()
+        self.overlay = None
+        self.hotkey_thread = None
+        self.is_exiting = False
+        
+        self.setWindowTitle("Portrait Screenshot Tool")
+        self.setGeometry(300, 300, 450, 350)
+        
+        self.init_ui()
+        self.init_tray()
+        
+        # Use a timer for hotkey registration to avoid blocking
+        QTimer.singleShot(500, self.register_hotkey)
+    
+    def load_settings(self):
+        settings_file = os.path.join(os.path.expanduser('~'), '.portrait_screenshot_settings.json')
+        default_settings = {
+            'hotkey': 'ctrl+shift+p',
+            'save_location': os.path.join(os.path.expanduser('~'), 'Screenshots'),
+            'portrait_width': 608,
+            'portrait_height': 1080
+        }
+        
+        try:
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r') as f:
+                    loaded = json.load(f)
+                    default_settings.update(loaded)
+                    width = default_settings['portrait_width']
+                    height = int(width * 16 / 9)
+                    default_settings['portrait_height'] = height
+        except Exception as e:
+            logger.warning(f"Error loading settings: {e}")
+        
+        return default_settings
+    
+    def save_settings(self):
+        settings_file = os.path.join(os.path.expanduser('~'), '.portrait_screenshot_settings.json')
+        try:
+            with open(settings_file, 'w') as f:
+                json.dump(self.settings, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving settings: {e}")
+    
+    def init_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+        
+        title = QLabel("Portrait Screenshot Tool")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+        
+        settings_group = QGroupBox("Settings")
+        settings_layout = QVBoxLayout()
+        
+        hotkey_layout = QHBoxLayout()
+        hotkey_layout.addWidget(QLabel("Hotkey:"))
+        self.hotkey_input = QLineEdit(self.settings['hotkey'])
+        self.hotkey_input.setPlaceholderText("e.g., ctrl+shift+p")
+        hotkey_layout.addWidget(self.hotkey_input)
+        settings_layout.addLayout(hotkey_layout)
+        
+        save_layout = QHBoxLayout()
+        save_layout.addWidget(QLabel("Save to:"))
+        self.save_input = QLineEdit(self.settings['save_location'])
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self.browse_folder)
+        save_layout.addWidget(self.save_input, 3)
+        save_layout.addWidget(browse_btn, 1)
+        settings_layout.addLayout(save_layout)
+        
+        dims_layout = QHBoxLayout()
+        dims_layout.addWidget(QLabel("Width:"))
+        self.width_spin = QSpinBox()
+        self.width_spin.setRange(100, 4000)
+        self.width_spin.setValue(self.settings['portrait_width'])
+        self.width_spin.valueChanged.connect(self.on_width_changed)
+        dims_layout.addWidget(self.width_spin)
+        
+        dims_layout.addWidget(QLabel("Height:"))
+        self.height_spin = QSpinBox()
+        self.height_spin.setRange(100, 4000)
+        self.height_spin.setValue(self.settings['portrait_height'])
+        self.height_spin.valueChanged.connect(self.on_height_changed)
+        dims_layout.addWidget(self.height_spin)
+        settings_layout.addLayout(dims_layout)
+        
+        # NEW: Aspect ratio lock and mode selection
+        ratio_lock_layout = QHBoxLayout()
+        self.lock_ratio_checkbox = QCheckBox("Lock Aspect Ratio")
+        self.lock_ratio_checkbox.setChecked(self.settings.get('lock_ratio', True))
+        self.lock_ratio_checkbox.stateChanged.connect(self.on_lock_ratio_changed)
+        ratio_lock_layout.addWidget(self.lock_ratio_checkbox)
+        
+        # Radio buttons for ratio selection
+        self.ratio_group = QButtonGroup()
+        self.ratio_9_16 = QRadioButton("9:16 (Portrait)")
+        self.ratio_16_9 = QRadioButton("16:9 (Landscape)")
+        
+        self.ratio_group.addButton(self.ratio_9_16)
+        self.ratio_group.addButton(self.ratio_16_9)
+        
+        if self.settings.get('ratio_mode', '9:16') == '9:16':
+            self.ratio_9_16.setChecked(True)
+        else:
+            self.ratio_16_9.setChecked(True)
+        
+        self.ratio_9_16.toggled.connect(self.on_ratio_mode_changed)
+        
+        ratio_lock_layout.addWidget(self.ratio_9_16)
+        ratio_lock_layout.addWidget(self.ratio_16_9)
+        ratio_lock_layout.addStretch()
+        settings_layout.addLayout(ratio_lock_layout)
+        
+        # Update the ratio label to show current state
+        self.ratio_label = QLabel()
+        self.update_ratio_label()
+        self.ratio_label.setStyleSheet("color: #10b981; font-size: 10px; font-style: italic;")
+        settings_layout.addWidget(self.ratio_label)
+        
+        # Enable/disable ratio buttons based on lock state
+        self.on_lock_ratio_changed()
+        
+        save_settings_btn = QPushButton("Save Settings")
+        save_settings_btn.clicked.connect(self.apply_settings)
+        settings_layout.addWidget(save_settings_btn)
+        
+        settings_group.setLayout(settings_layout)
+        layout.addWidget(settings_group)
+        
+        btn_layout = QHBoxLayout()
+        
+        capture_btn = QPushButton("Capture Now")
+        capture_btn.setStyleSheet("padding: 10px; font-weight: bold;")
+        capture_btn.clicked.connect(self.start_capture)
+        btn_layout.addWidget(capture_btn)
+        
+        minimize_btn = QPushButton("Minimize to Tray")
+        minimize_btn.clicked.connect(self.hide)
+        btn_layout.addWidget(minimize_btn)
+        
+        layout.addLayout(btn_layout)
+        
+        exit_btn = QPushButton("Exit Application")
+        exit_btn.setStyleSheet("background-color: #dc2626; color: white; padding: 8px;")
+        exit_btn.clicked.connect(self.quit_app)
+        layout.addWidget(exit_btn)
+        
+        info = QLabel(f"Press {self.settings['hotkey'].upper()} to capture\nRuns in system tray when minimized")
+        info.setStyleSheet("color: gray; font-size: 10px;")
+        info.setAlignment(Qt.AlignCenter)
+        layout.addWidget(info)
+        
+        central_widget.setLayout(layout)
+    
+    def browse_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Save Location")
+        if folder:
+            self.save_input.setText(folder)
+    
+    def on_width_changed(self, value):
+        # Only update height if ratio is locked
+        if self.settings.get('lock_ratio', True):
+            self.height_spin.blockSignals(True)
+            if self.settings.get('ratio_mode', '9:16') == '9:16':
+                new_height = int(value * 16 / 9)
+            else:  # 16:9
+                new_height = int(value * 9 / 16)
+            self.height_spin.setValue(new_height)
+            self.height_spin.blockSignals(False)
+            self.update_ratio_label()
+    
+    def on_height_changed(self, value):
+        # Only update width if ratio is locked
+        if self.settings.get('lock_ratio', True):
+            self.width_spin.blockSignals(True)
+            if self.settings.get('ratio_mode', '9:16') == '9:16':
+                new_width = int(value * 9 / 16)
+            else:  # 16:9
+                new_width = int(value * 16 / 9)
+            self.width_spin.setValue(new_width)
+            self.width_spin.blockSignals(False)
+            self.update_ratio_label()
+    
+    def on_lock_ratio_changed(self):
+        """Handle lock ratio checkbox state change"""
+        is_locked = self.lock_ratio_checkbox.isChecked()
+        self.settings['lock_ratio'] = is_locked
+        
+        # Enable/disable ratio mode buttons
+        self.ratio_9_16.setEnabled(is_locked)
+        self.ratio_16_9.setEnabled(is_locked)
+        
+        # If locking, adjust dimensions to match current ratio mode
+        if is_locked:
+            if self.settings.get('ratio_mode', '9:16') == '9:16':
+                self.on_width_changed(self.width_spin.value())
+            else:
+                self.on_width_changed(self.width_spin.value())
+        
+        self.update_ratio_label()
+    
+    def on_ratio_mode_changed(self, checked):
+        """Handle ratio mode change (9:16 or 16:9)"""
+        if checked:  # Only handle when button is checked (not unchecked)
+            if self.ratio_9_16.isChecked():
+                self.settings['ratio_mode'] = '9:16'
+            else:
+                self.settings['ratio_mode'] = '16:9'
+            
+            # Adjust dimensions based on new ratio
+            if self.settings.get('lock_ratio', True):
+                self.on_width_changed(self.width_spin.value())
+            
+            self.update_ratio_label()
+    
+    def update_ratio_label(self):
+        """Update the ratio information label"""
+        if self.settings.get('lock_ratio', True):
+            mode = self.settings.get('ratio_mode', '9:16')
+            if mode == '9:16':
+                self.ratio_label.setText("Ratio: 9:16 (Portrait - YouTube Shorts/TikTok/Instagram)")
+            else:
+                self.ratio_label.setText("Ratio: 16:9 (Landscape - YouTube/Standard Video)")
+        else:
+            width = self.width_spin.value()
+            height = self.height_spin.value()
+            self.ratio_label.setText(f"Custom dimensions: {width} × {height} px (ratio unlocked)")
+    
+    def apply_settings(self):
+        old_hotkey = self.settings['hotkey']
+        
+        self.settings['hotkey'] = self.hotkey_input.text()
+        self.settings['save_location'] = self.save_input.text()
+        self.settings['portrait_width'] = self.width_spin.value()
+        self.settings['portrait_height'] = self.height_spin.value()
+        self.settings['lock_ratio'] = self.lock_ratio_checkbox.isChecked()
+        self.settings['ratio_mode'] = '9:16' if self.ratio_9_16.isChecked() else '16:9'
+        
+        self.save_settings()
+        
+        if old_hotkey != self.settings['hotkey']:
+            self.register_hotkey()
+        
+        self.tray_icon.setToolTip(f"Portrait Screenshot\nPress {self.settings['hotkey'].upper()}")
+        
+        QMessageBox.information(self, "Settings Saved", "Your settings have been saved successfully!")
+    
+    def init_tray(self):
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        icon_pixmap = QPixmap(64, 64)
+        icon_pixmap.fill(QColor(147, 51, 234))
+        self.tray_icon.setIcon(QIcon(icon_pixmap))
+        
+        tray_menu = QMenu()
+        
+        capture_action = QAction("Capture", self)
+        capture_action.triggered.connect(self.start_capture)
+        tray_menu.addAction(capture_action)
+        
+        show_action = QAction("Show Window", self)
+        show_action.triggered.connect(self.show)
+        tray_menu.addAction(show_action)
+        
+        tray_menu.addSeparator()
+        
+        quit_action = QAction("Exit", self)
+        quit_action.triggered.connect(self.quit_app)
+        tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self.on_tray_click)
+        self.tray_icon.show()
+        
+        self.tray_icon.setToolTip(f"Portrait Screenshot\nPress {self.settings['hotkey'].upper()}")
+    
+    def on_tray_click(self, reason):
+        if reason == QSystemTrayIcon.Trigger and not self.isVisible():
+            self.show()
+            self.activateWindow()
+    
+    def register_hotkey(self):
+        """Register hotkey in a separate thread to avoid blocking UI"""
+        if self.is_exiting:
+            return
+        
+        try:
+            # Stop previous hotkey thread if exists
+            if self.hotkey_thread is not None:
+                self.hotkey_thread.stop()
+                self.hotkey_thread = None
+            
+            # Create and start new hotkey thread
+            self.hotkey_thread = HotkeyThread(self.settings['hotkey'])
+            self.hotkey_thread.hotkey_triggered.connect(self.start_capture)
+            self.hotkey_thread.start()
+            
+            logger.info(f"Hotkey registered: {self.settings['hotkey']}")
+        except Exception as e:
+            logger.error(f"Could not register hotkey: {e}")
+            QMessageBox.warning(self, "Hotkey Error", 
+                              f"Could not register hotkey: {self.settings['hotkey']}\n{str(e)}")
+    
+    def start_capture(self):
+        """Start capture with safety checks"""
+        if self.is_exiting:
+            return
+        
+        try:
+            if self.overlay is None or not self.overlay.isVisible():
+                self.overlay = CaptureOverlay(self.settings)
+                self.overlay.capture_signal.connect(self.on_capture_complete)
+                self.overlay.show()
+                self.overlay.activateWindow()
+                self.overlay.raise_()  # CHANGED: Ensure overlay is on top
+        except Exception as e:
+            logger.error(f"Error starting capture: {e}")
+    
+    def on_capture_complete(self, rect):
+        pass
+    
+    def quit_app(self):
+        reply = QMessageBox.question(self, 'Exit', 
+                                     'Are you sure you want to exit?',
+                                     QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.close()
+    
+    def closeEvent(self, event):
+        """Handle app closure safely"""
+        # If we're already exiting, force close
+        if self.is_exiting:
+            event.accept()
+            return
+        
+        self.is_exiting = True
+        
+        # Stop hotkey thread
+        try:
+            if self.hotkey_thread is not None:
+                self.hotkey_thread.stop()
+                self.hotkey_thread = None
+        except Exception as e:
+            logger.error(f"Error stopping hotkey thread: {e}")
+        
+        # Close overlay if open
+        if self.overlay and self.overlay.isVisible():
+            self.overlay.close()
+        
+        # Hide tray icon
+        try:
+            self.tray_icon.hide()
+        except Exception as e:
+            logger.error(f"Error hiding tray icon: {e}")
+        
+        # Accept the close event
+        event.accept()
+        
+        # Schedule application quit after cleanup
+        QTimer.singleShot(100, QApplication.quit)
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
+    
+    window = PortraitScreenshotApp()
+    window.show()
+    
+    sys.exit(app.exec_())
+
+
+if __name__ == '__main__':
+    main()
