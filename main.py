@@ -224,13 +224,37 @@ class CaptureOverlay(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         
-        # Fill entire screen with semi-transparent dark overlay
-        # This blocks visibility and interaction with windows behind
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 180))
-        
-        # Draw the screenshot preview in the capture area
+        # Draw the full screenshot with reduced opacity outside capture area
         if hasattr(self, 'screen_pixmap'):
-            painter.drawPixmap(self.capture_rect, self.screen_pixmap, self.capture_rect)
+            # Draw full screen pixmap
+            painter.drawPixmap(0, 0, self.screen_pixmap)
+            
+            # Darken areas outside the capture rectangle
+            # Create a path for everything except the capture area
+            path_painter = QPainter(self.screen_pixmap)
+            
+            # Draw semi-transparent dark overlay only on areas outside capture rect
+            dark_color = QColor(0, 0, 0, 100)  # Lighter opacity (100 instead of 180)
+            
+            # Darken top area
+            if self.capture_rect.top() > 0:
+                painter.fillRect(0, 0, self.width(), self.capture_rect.top(), dark_color)
+            
+            # Darken bottom area
+            if self.capture_rect.bottom() < self.height():
+                painter.fillRect(0, self.capture_rect.bottom(), self.width(), 
+                               self.height() - self.capture_rect.bottom(), dark_color)
+            
+            # Darken left area
+            if self.capture_rect.left() > 0:
+                painter.fillRect(0, self.capture_rect.top(), self.capture_rect.left(), 
+                               self.capture_rect.height(), dark_color)
+            
+            # Darken right area
+            if self.capture_rect.right() < self.width():
+                painter.fillRect(self.capture_rect.right(), self.capture_rect.top(), 
+                               self.width() - self.capture_rect.right(), 
+                               self.capture_rect.height(), dark_color)
         
         # Draw border around capture area
         pen = QPen(QColor(147, 51, 234), 4)
@@ -348,15 +372,85 @@ class CaptureOverlay(QWidget):
                 self.save_capture_region()
                 
                 self.capture_signal.emit(self.capture_rect)
-                QMessageBox.information(self, "Saved", 
-                                      f"Screenshot saved:\n{filepath}")
+                # Show a toast-like notification that auto-dismisses
+                self.show_toast_notification(f"Screenshot saved:\n{filepath}")
             else:
-                QMessageBox.warning(self, "Error", "Failed to save screenshot")
+                # Show error message with auto-dismiss
+                self.show_toast_notification("Failed to save screenshot", is_error=True, duration=3000)
         except Exception as e:
             logger.error(f"Error during capture: {e}")
-            QMessageBox.warning(self, "Error", f"Capture failed: {str(e)}")
+            self.show_toast_notification(f"Capture failed: {str(e)}", is_error=True, duration=3000)
         finally:
             self.close()
+    
+    def show_toast_notification(self, message, is_error=False, duration=2000):
+        """Show a temporary notification that auto-dismisses"""
+        from PyQt5.QtWidgets import QLabel, QFrame
+        from PyQt5.QtCore import Qt, QTimer
+        
+        # Create a frame for the notification
+        toast = QFrame()
+        toast.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        
+        # Style the notification with semi-transparent background
+        if is_error:
+            bg_color = "#dc2626"  # Red
+            text_color = "white"
+        else:
+            bg_color = "#10b981"  # Green
+            text_color = "white"
+        
+        toast.setStyleSheet(f"""
+            QFrame {{
+                background-color: {bg_color};
+                border-radius: 8px;
+                padding: 15px 25px;
+            }}
+        """)
+        
+        # Create label for message
+        label = QLabel(message)
+        label.setStyleSheet(f"color: {text_color}; font-weight: bold; font-size: 13px;")
+        label.setAlignment(Qt.AlignCenter)
+        
+        # Set layout
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(label)
+        toast.setLayout(layout)
+        
+        # Adjust size with some padding
+        toast.adjustSize()
+        
+        # Set opacity to 0.95 (95% visible, 5% transparent)
+        toast.setWindowOpacity(0.95)
+        
+        # Position at bottom center of screen
+        screen = QApplication.primaryScreen()
+        screen_geom = screen.geometry()
+        toast_width = toast.width()
+        toast_height = toast.height()
+        
+        x = screen_geom.x() + (screen_geom.width() - toast_width) // 2
+        y = screen_geom.y() + screen_geom.height() - toast_height - 50
+        
+        toast.move(x, y)
+        toast.raise_()
+        toast.activateWindow()
+        toast.show()
+        
+        # Keep a reference to prevent garbage collection
+        if not hasattr(self, '_active_toasts'):
+            self._active_toasts = []
+        self._active_toasts.append(toast)
+        
+        # Auto-close after specified duration
+        def close_toast():
+            toast.close()
+            if toast in self._active_toasts:
+                self._active_toasts.remove(toast)
+        
+        QTimer.singleShot(duration, close_toast)
     
     def save_capture_region(self):
         """Save the current capture region to settings"""
@@ -381,7 +475,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool v1.1.0")# Update version here
+        self.setWindowTitle("Portrait Screenshot Tool")
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
