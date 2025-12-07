@@ -10,11 +10,12 @@
 
 ## [v1.2.0] - 2025-12-07
 ### Added
-- 
+- 1.feat: Replace modal dialogs with auto-dismissing toast notifications. 
+- 2.feat: Improve overlay visibility - dim only outside capture area
 
-
-### Changed
-- 
+## [v1.1.0] - 2025-12-07
+### Added
+- feat: Add region memory - remember last capture location
 - 
 
 ### Fixed
