@@ -475,7 +475,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool")
+        self.setWindowTitle("Portrait Screenshot Tool v1.2.0")
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
