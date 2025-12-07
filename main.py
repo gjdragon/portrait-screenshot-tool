@@ -371,6 +371,10 @@ class CaptureOverlay(QWidget):
                 # Save the current capture region for next time
                 self.save_capture_region()
                 
+                # Copy to clipboard if enabled
+                if self.settings.get('copy_to_clipboard', True):
+                    self.copy_image_to_clipboard(captured)
+                
                 self.capture_signal.emit(self.capture_rect)
                 # Show a toast-like notification that auto-dismisses
                 self.show_toast_notification(f"Screenshot saved:\n{filepath}")
@@ -382,6 +386,15 @@ class CaptureOverlay(QWidget):
             self.show_toast_notification(f"Capture failed: {str(e)}", is_error=True, duration=3000)
         finally:
             self.close()
+    
+    def copy_image_to_clipboard(self, pixmap):
+        """Copy the pixmap image to system clipboard"""
+        try:
+            clipboard = QApplication.clipboard()
+            clipboard.setPixmap(pixmap)
+            logger.info("Image copied to clipboard")
+        except Exception as e:
+            logger.error(f"Error copying to clipboard: {e}")
     
     def show_toast_notification(self, message, is_error=False, duration=2000):
         """Show a temporary notification that auto-dismisses"""
@@ -475,7 +488,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool v1.2.0")
+        self.setWindowTitle("Portrait Screenshot Tool v1.3.0")
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
@@ -491,7 +504,8 @@ class PortraitScreenshotApp(QMainWindow):
             'save_location': os.path.join(os.path.expanduser('~'), 'Screenshots'),
             'portrait_width': 608,
             'portrait_height': 1080,
-            'last_capture_rect': None
+            'last_capture_rect': None,
+            'copy_to_clipboard': True
         }
         
         try:
@@ -602,6 +616,14 @@ class PortraitScreenshotApp(QMainWindow):
         self.update_last_region_label()
         self.last_region_label.setStyleSheet("color: #3b82f6; font-size: 10px; font-style: italic;")
         settings_layout.addWidget(self.last_region_label)
+        
+        # NEW: Clipboard copy option
+        clipboard_layout = QHBoxLayout()
+        self.copy_to_clipboard_checkbox = QCheckBox("Copy screenshot to clipboard")
+        self.copy_to_clipboard_checkbox.setChecked(self.settings.get('copy_to_clipboard', True))
+        clipboard_layout.addWidget(self.copy_to_clipboard_checkbox)
+        clipboard_layout.addStretch()
+        settings_layout.addLayout(clipboard_layout)
         
         save_settings_btn = QPushButton("Save Settings")
         save_settings_btn.clicked.connect(self.apply_settings)
@@ -728,6 +750,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.settings['portrait_height'] = self.height_spin.value()
         self.settings['lock_ratio'] = self.lock_ratio_checkbox.isChecked()
         self.settings['ratio_mode'] = '9:16' if self.ratio_9_16.isChecked() else '16:9'
+        self.settings['copy_to_clipboard'] = self.copy_to_clipboard_checkbox.isChecked()
         
         self.save_settings()
         
