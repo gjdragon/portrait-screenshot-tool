@@ -106,24 +106,82 @@ class CaptureOverlay(QWidget):
         logger.info(f"Full desktop offset: {self.full_desktop_offset.x()}, {self.full_desktop_offset.y()}")
         logger.info(f"Capture size: w={width}, h={height}")
         
-        # Center horizontally within active screen
-        x = screen_left + (screen_width - width) // 2
+        # Try to use last captured region if it's still valid
+        last_rect = self.get_valid_last_region(width, height)
         
-        # Center vertically within active screen
-        y = screen_top + (screen_height - height) // 2
+        if last_rect is not None:
+            self.capture_rect = last_rect
+            logger.info(f"Using last captured region: x={last_rect.x()}, y={last_rect.y()}, w={last_rect.width()}, h={last_rect.height()}")
+        else:
+            # Center horizontally within active screen
+            x = screen_left + (screen_width - width) // 2
+            
+            # Center vertically within active screen
+            y = screen_top + (screen_height - height) // 2
+            
+            # Clamp to ensure rectangle stays within screen bounds
+            x = max(screen_left, min(x, screen_left + screen_width - width))
+            y = max(screen_top, min(y, screen_top + screen_height - height))
+            
+            self.capture_rect = QRect(int(x), int(y), int(width), int(height))
+            logger.info(f"Capture rect (centered): x={int(x)}, y={int(y)}, w={int(width)}, h={int(height)}")
         
-        # Clamp to ensure rectangle stays within screen bounds
-        x = max(screen_left, min(x, screen_left + screen_width - width))
-        y = max(screen_top, min(y, screen_top + screen_height - height))
-        
-        self.capture_rect = QRect(int(x), int(y), int(width), int(height))
-        logger.info(f"Capture rect (absolute): x={int(x)}, y={int(y)}, w={int(width)}, h={int(height)}")
         self.dragging = False
         self.drag_offset = QPoint()
         
         # Capture all screens
         self.capture_screens()
+    
+    def get_valid_last_region(self, width, height):
+        """
+        Check if the last captured region is still valid for current screen setup.
+        Returns a QRect adjusted for current screen geometry, or None if invalid.
+        """
+        try:
+            last_rect_data = self.settings.get('last_capture_rect')
+            if not last_rect_data:
+                return None
+            
+            last_x = last_rect_data.get('x')
+            last_y = last_rect_data.get('y')
+            last_w = last_rect_data.get('width')
+            last_h = last_rect_data.get('height')
+            
+            # Check if dimensions match current settings
+            if last_w != width or last_h != height:
+                logger.info(f"Last region dimensions mismatch: {last_w}x{last_h} vs {width}x{height}")
+                return None
+            
+            last_rect = QRect(last_x, last_y, last_w, last_h)
+            
+            # Check if the last region is still valid (overlaps with any screen)
+            for screen in self.screens:
+                screen_geom = screen.geometry()
+                if last_rect.intersects(screen_geom):
+                    # Clamp to ensure it stays within full desktop bounds
+                    valid_rect = self.clamp_rect_to_desktop(last_rect)
+                    logger.info(f"Last region is valid on screen: {screen_geom}")
+                    return valid_rect
+            
+            logger.info("Last region doesn't overlap with any current screen")
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error validating last region: {e}")
+            return None
+    
+    def clamp_rect_to_desktop(self, rect):
+        """Clamp a rectangle to fit within the full desktop bounds"""
+        min_x = self.full_desktop_offset.x()
+        min_y = self.full_desktop_offset.y()
+        max_x = min_x + self.width()
+        max_y = min_y + self.height()
         
+        x = max(min_x, min(rect.x(), max_x - rect.width()))
+        y = max(min_y, min(rect.y(), max_y - rect.height()))
+        
+        return QRect(int(x), int(y), rect.width(), rect.height())
+    
     def setup_full_desktop_geometry(self):
         """Set geometry to cover all monitors"""
         min_x = min_y = float('inf')
@@ -203,7 +261,6 @@ class CaptureOverlay(QWidget):
         painter.fillRect(bg_rect, QColor(147, 51, 234))
         painter.drawText(text_x, text_y, dim_text)
         
-        # CHANGED: Updated instructions to reflect new drag behavior
         instructions = "ENTER = Capture  |  ESC = Cancel  |  Click and drag to move"
         inst_rect = painter.fontMetrics().boundingRect(instructions)
         inst_x = self.width() // 2 - inst_rect.width() // 2
@@ -225,7 +282,7 @@ class CaptureOverlay(QWidget):
     
     def mouseMoveEvent(self, event):
         if self.dragging:
-            # CHANGED: Calculate new position based on drag offset
+            # Calculate new position based on drag offset
             new_pos = event.pos() - self.drag_offset
             
             # Clamp within the full desktop bounds
@@ -239,7 +296,7 @@ class CaptureOverlay(QWidget):
             self.capture_rect.moveTo(new_pos)
             self.update()
         else:
-            # CHANGED: Show open hand cursor when hovering over rectangle
+            # Show open hand cursor when hovering over rectangle
             if self.capture_rect.contains(event.pos()):
                 self.setCursor(Qt.OpenHandCursor)
             else:
@@ -248,7 +305,7 @@ class CaptureOverlay(QWidget):
     def mouseReleaseEvent(self, event):
         if self.dragging:
             self.dragging = False
-            # CHANGED: Update cursor after releasing
+            # Update cursor after releasing
             if self.capture_rect.contains(event.pos()):
                 self.setCursor(Qt.OpenHandCursor)
             else:
@@ -287,6 +344,9 @@ class CaptureOverlay(QWidget):
             filepath = os.path.join(save_dir, filename)
             
             if captured.save(filepath, 'PNG'):
+                # Save the current capture region for next time
+                self.save_capture_region()
+                
                 self.capture_signal.emit(self.capture_rect)
                 QMessageBox.information(self, "Saved", 
                                       f"Screenshot saved:\n{filepath}")
@@ -297,6 +357,20 @@ class CaptureOverlay(QWidget):
             QMessageBox.warning(self, "Error", f"Capture failed: {str(e)}")
         finally:
             self.close()
+    
+    def save_capture_region(self):
+        """Save the current capture region to settings"""
+        try:
+            rect_data = {
+                'x': self.capture_rect.x(),
+                'y': self.capture_rect.y(),
+                'width': self.capture_rect.width(),
+                'height': self.capture_rect.height()
+            }
+            self.settings['last_capture_rect'] = rect_data
+            logger.info(f"Saved capture region: {rect_data}")
+        except Exception as e:
+            logger.error(f"Error saving capture region: {e}")
 
 
 class PortraitScreenshotApp(QMainWindow):
@@ -307,7 +381,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool v1.0.0")# Update version here
+        self.setWindowTitle("Portrait Screenshot Tool v1.1.0")# Update version here
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
@@ -322,7 +396,8 @@ class PortraitScreenshotApp(QMainWindow):
             'hotkey': 'ctrl+shift+p',
             'save_location': os.path.join(os.path.expanduser('~'), 'Screenshots'),
             'portrait_width': 608,
-            'portrait_height': 1080
+            'portrait_height': 1080,
+            'last_capture_rect': None
         }
         
         try:
@@ -392,7 +467,7 @@ class PortraitScreenshotApp(QMainWindow):
         dims_layout.addWidget(self.height_spin)
         settings_layout.addLayout(dims_layout)
         
-        # NEW: Aspect ratio lock and mode selection
+        # Aspect ratio lock and mode selection
         ratio_lock_layout = QHBoxLayout()
         self.lock_ratio_checkbox = QCheckBox("Lock Aspect Ratio")
         self.lock_ratio_checkbox.setChecked(self.settings.get('lock_ratio', True))
@@ -428,6 +503,12 @@ class PortraitScreenshotApp(QMainWindow):
         # Enable/disable ratio buttons based on lock state
         self.on_lock_ratio_changed()
         
+        # NEW: Show last capture region status
+        self.last_region_label = QLabel()
+        self.update_last_region_label()
+        self.last_region_label.setStyleSheet("color: #3b82f6; font-size: 10px; font-style: italic;")
+        settings_layout.addWidget(self.last_region_label)
+        
         save_settings_btn = QPushButton("Save Settings")
         save_settings_btn.clicked.connect(self.apply_settings)
         settings_layout.addWidget(save_settings_btn)
@@ -459,6 +540,16 @@ class PortraitScreenshotApp(QMainWindow):
         layout.addWidget(info)
         
         central_widget.setLayout(layout)
+    
+    def update_last_region_label(self):
+        """Update label showing last capture region status"""
+        last_rect = self.settings.get('last_capture_rect')
+        if last_rect:
+            self.last_region_label.setText(
+                f"Last region remembered: {last_rect['width']} × {last_rect['height']} px at ({last_rect['x']}, {last_rect['y']})"
+            )
+        else:
+            self.last_region_label.setText("No previous capture region saved")
     
     def browse_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Save Location")
@@ -620,12 +711,16 @@ class PortraitScreenshotApp(QMainWindow):
                 self.overlay.capture_signal.connect(self.on_capture_complete)
                 self.overlay.show()
                 self.overlay.activateWindow()
-                self.overlay.raise_()  # CHANGED: Ensure overlay is on top
+                self.overlay.raise_()
         except Exception as e:
             logger.error(f"Error starting capture: {e}")
     
     def on_capture_complete(self, rect):
-        pass
+        """Called when capture is completed"""
+        # Update the last region label
+        self.update_last_region_label()
+        # Save settings to persist the last region
+        self.save_settings()
     
     def quit_app(self):
         reply = QMessageBox.question(self, 'Exit', 
