@@ -8,6 +8,15 @@
 
 ---
 
+## [v1.4.0] - 2025-12-07
+### Added
+- 1.feat: Make capture rectangle resizable with live dimension updates
+	update the GUI showing the region, update the width and height values
+
+## [v1.3.0] - 2025-12-07
+### Added
+- 1.feat: Add clipboard copy option with checkbox
+
 ## [v1.2.0] - 2025-12-07
 ### Added
 - 1.feat: Replace modal dialogs with auto-dismissing toast notifications. 

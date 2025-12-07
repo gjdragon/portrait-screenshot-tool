@@ -59,6 +59,7 @@ class HotkeyThread(QThread):
 class CaptureOverlay(QWidget):
     capture_signal = pyqtSignal(QRect)
     close_signal = pyqtSignal()
+    update_ui_dimensions = pyqtSignal(int, int)  # width, height
     
     def __init__(self, settings):
         super().__init__()
@@ -128,6 +129,9 @@ class CaptureOverlay(QWidget):
         
         self.dragging = False
         self.drag_offset = QPoint()
+        self.resizing = False
+        self.resize_edge = None  # Which edge is being resized
+        self.resize_min_size = 100  # Minimum resize dimension
         
         # Capture all screens
         self.capture_screens()
@@ -261,9 +265,11 @@ class CaptureOverlay(QWidget):
         painter.setPen(pen)
         painter.drawRect(self.capture_rect)
         
-        # Draw corner markers
-        corner_size = 12
+        # Draw corner and edge handles for resizing
+        handle_size = 10
         painter.setBrush(QColor(147, 51, 234))
+        
+        # Draw corner handles
         corners = [
             self.capture_rect.topLeft(),
             self.capture_rect.topRight(),
@@ -271,7 +277,19 @@ class CaptureOverlay(QWidget):
             self.capture_rect.bottomRight()
         ]
         for corner in corners:
-            painter.drawEllipse(corner, corner_size, corner_size)
+            painter.drawEllipse(corner.x() - handle_size, corner.y() - handle_size, 
+                              handle_size * 2, handle_size * 2)
+        
+        # Draw edge handles
+        edges = [
+            QPoint(self.capture_rect.center().x(), self.capture_rect.top()),  # top
+            QPoint(self.capture_rect.center().x(), self.capture_rect.bottom()),  # bottom
+            QPoint(self.capture_rect.left(), self.capture_rect.center().y()),  # left
+            QPoint(self.capture_rect.right(), self.capture_rect.center().y())  # right
+        ]
+        for edge in edges:
+            painter.drawRect(edge.x() - handle_size // 2, edge.y() - handle_size // 2,
+                           handle_size, handle_size)
         
         # Draw dimensions label
         painter.setPen(Qt.white)
@@ -285,7 +303,7 @@ class CaptureOverlay(QWidget):
         painter.fillRect(bg_rect, QColor(147, 51, 234))
         painter.drawText(text_x, text_y, dim_text)
         
-        instructions = "ENTER = Capture  |  ESC = Cancel  |  Click and drag to move"
+        instructions = "ENTER = Capture  |  ESC = Cancel  |  Drag to move  |  Drag edges/corners to resize"
         inst_rect = painter.fontMetrics().boundingRect(instructions)
         inst_x = self.width() // 2 - inst_rect.width() // 2
         inst_y = self.height() - 50
@@ -295,17 +313,110 @@ class CaptureOverlay(QWidget):
         painter.fillRect(inst_bg, QColor(30, 41, 59, 230))
         painter.drawText(inst_x, inst_y, instructions)
     
+    def get_resize_edge(self, pos):
+        """Determine which edge or corner is being hovered/clicked"""
+        handle_size = 15
+        
+        # Check corners first
+        corners = {
+            'tl': self.capture_rect.topLeft(),
+            'tr': self.capture_rect.topRight(),
+            'bl': self.capture_rect.bottomLeft(),
+            'br': self.capture_rect.bottomRight()
+        }
+        
+        for corner_name, corner_pos in corners.items():
+            if self.distance(pos, corner_pos) <= handle_size:
+                return corner_name
+        
+        # Check edges
+        handle_margin = 15
+        
+        if abs(pos.y() - self.capture_rect.top()) <= handle_margin and \
+           self.capture_rect.left() <= pos.x() <= self.capture_rect.right():
+            return 't'
+        
+        if abs(pos.y() - self.capture_rect.bottom()) <= handle_margin and \
+           self.capture_rect.left() <= pos.x() <= self.capture_rect.right():
+            return 'b'
+        
+        if abs(pos.x() - self.capture_rect.left()) <= handle_margin and \
+           self.capture_rect.top() <= pos.y() <= self.capture_rect.bottom():
+            return 'l'
+        
+        if abs(pos.x() - self.capture_rect.right()) <= handle_margin and \
+           self.capture_rect.top() <= pos.y() <= self.capture_rect.bottom():
+            return 'r'
+        
+        return None
+    
+    def distance(self, p1, p2):
+        """Calculate distance between two points"""
+        return ((p1.x() - p2.x()) ** 2 + (p1.y() - p2.y()) ** 2) ** 0.5
+    
+    def get_resize_cursor(self, edge):
+        """Get appropriate cursor for resize edge"""
+        cursor_map = {
+            'tl': Qt.SizeFDiagCursor,
+            'tr': Qt.SizeBDiagCursor,
+            'bl': Qt.SizeBDiagCursor,
+            'br': Qt.SizeFDiagCursor,
+            't': Qt.SizeVerCursor,
+            'b': Qt.SizeVerCursor,
+            'l': Qt.SizeHorCursor,
+            'r': Qt.SizeHorCursor
+        }
+        return cursor_map.get(edge, Qt.ArrowCursor)
+    
     def mousePressEvent(self, event):
-        # Only allow interaction with the capture rectangle
-        # All clicks outside are blocked
-        if self.capture_rect.contains(event.pos()):
+        # Check if clicking on resize handle
+        resize_edge = self.get_resize_edge(event.pos())
+        if resize_edge:
+            self.resizing = True
+            self.resize_edge = resize_edge
+            self.resize_start_pos = event.pos()
+            self.resize_start_rect = QRect(self.capture_rect)
+            self.setCursor(self.get_resize_cursor(resize_edge))
+        # Check if clicking inside rectangle for dragging
+        elif self.capture_rect.contains(event.pos()):
             self.dragging = True
             self.drag_offset = event.pos() - self.capture_rect.topLeft()
             self.setCursor(Qt.ClosedHandCursor)
-        # If clicked outside, do nothing - effectively blocking the click
     
     def mouseMoveEvent(self, event):
-        if self.dragging:
+        if self.resizing:
+            # Calculate the change in position
+            dx = event.pos().x() - self.resize_start_pos.x()
+            dy = event.pos().y() - self.resize_start_pos.y()
+            
+            new_rect = QRect(self.resize_start_rect)
+            
+            # Handle corner and edge resizing
+            if self.resize_edge == 'tl':
+                new_rect.setTopLeft(new_rect.topLeft() + QPoint(dx, dy))
+            elif self.resize_edge == 'tr':
+                new_rect.setTopRight(new_rect.topRight() + QPoint(dx, dy))
+            elif self.resize_edge == 'bl':
+                new_rect.setBottomLeft(new_rect.bottomLeft() + QPoint(dx, dy))
+            elif self.resize_edge == 'br':
+                new_rect.setBottomRight(new_rect.bottomRight() + QPoint(dx, dy))
+            elif self.resize_edge == 't':
+                new_rect.setTop(new_rect.top() + dy)
+            elif self.resize_edge == 'b':
+                new_rect.setBottom(new_rect.bottom() + dy)
+            elif self.resize_edge == 'l':
+                new_rect.setLeft(new_rect.left() + dx)
+            elif self.resize_edge == 'r':
+                new_rect.setRight(new_rect.right() + dx)
+            
+            # Ensure minimum size
+            if new_rect.width() >= self.resize_min_size and new_rect.height() >= self.resize_min_size:
+                # Clamp to desktop bounds
+                new_rect = self.clamp_rect_to_desktop(new_rect)
+                self.capture_rect = new_rect
+                self.update()
+        
+        elif self.dragging:
             # Calculate new position based on drag offset
             new_pos = event.pos() - self.drag_offset
             
@@ -319,15 +430,32 @@ class CaptureOverlay(QWidget):
             new_pos.setY(max(min_y, min(new_pos.y(), max_y)))
             self.capture_rect.moveTo(new_pos)
             self.update()
+        
         else:
-            # Show open hand cursor when hovering over rectangle
-            if self.capture_rect.contains(event.pos()):
+            # Update cursor based on hover position
+            resize_edge = self.get_resize_edge(event.pos())
+            if resize_edge:
+                self.setCursor(self.get_resize_cursor(resize_edge))
+            elif self.capture_rect.contains(event.pos()):
                 self.setCursor(Qt.OpenHandCursor)
             else:
                 self.setCursor(Qt.CrossCursor)
     
     def mouseReleaseEvent(self, event):
-        if self.dragging:
+        if self.resizing:
+            self.resizing = False
+            self.resize_edge = None
+            # Emit signal to update UI with new dimensions
+            self.update_ui_dimensions.emit(self.capture_rect.width(), self.capture_rect.height())
+            # Update cursor after releasing
+            resize_edge = self.get_resize_edge(event.pos())
+            if resize_edge:
+                self.setCursor(self.get_resize_cursor(resize_edge))
+            elif self.capture_rect.contains(event.pos()):
+                self.setCursor(Qt.OpenHandCursor)
+            else:
+                self.setCursor(Qt.CrossCursor)
+        elif self.dragging:
             self.dragging = False
             # Update cursor after releasing
             if self.capture_rect.contains(event.pos()):
@@ -466,7 +594,7 @@ class CaptureOverlay(QWidget):
         QTimer.singleShot(duration, close_toast)
     
     def save_capture_region(self):
-        """Save the current capture region to settings"""
+        """Save the current capture region to settings (position only)"""
         try:
             rect_data = {
                 'x': self.capture_rect.x(),
@@ -488,7 +616,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool v1.3.0")
+        self.setWindowTitle("Portrait Screenshot Tool v1.4.0")
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
@@ -826,6 +954,7 @@ class PortraitScreenshotApp(QMainWindow):
             if self.overlay is None or not self.overlay.isVisible():
                 self.overlay = CaptureOverlay(self.settings)
                 self.overlay.capture_signal.connect(self.on_capture_complete)
+                self.overlay.update_ui_dimensions.connect(self.on_overlay_dimensions_changed)
                 self.overlay.show()
                 self.overlay.activateWindow()
                 self.overlay.raise_()
@@ -838,6 +967,19 @@ class PortraitScreenshotApp(QMainWindow):
         self.update_last_region_label()
         # Save settings to persist the last region
         self.save_settings()
+    
+    def on_overlay_dimensions_changed(self, width, height):
+        """Update UI dimensions when user resizes the capture rectangle"""
+        self.width_spin.blockSignals(True)
+        self.height_spin.blockSignals(True)
+        
+        self.width_spin.setValue(width)
+        self.height_spin.setValue(height)
+        
+        self.width_spin.blockSignals(False)
+        self.height_spin.blockSignals(False)
+        
+        self.update_ratio_label()
     
     def quit_app(self):
         reply = QMessageBox.question(self, 'Exit', 
