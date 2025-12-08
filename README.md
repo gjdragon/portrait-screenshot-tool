@@ -3,6 +3,8 @@
 A lightweight, fast, and customizable **portrait-format screen capture tool** built with **PyQt5**.
 Designed for creators who frequently capture **9:16 (Shorts/TikTok/Reels)** or **16:9** video frames, with a draggable overlay, global hotkey support, and auto-saving.
 
+<img width="452" height="441" alt="2025-12-08 18_58_38-Portrait Screenshot Tool v1 4 0" src="https://github.com/user-attachments/assets/5c6814e5-b212-430a-b25d-d914b9505226" />
+
 ---
 
 ## ✨ Features
