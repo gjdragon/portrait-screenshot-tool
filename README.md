@@ -42,14 +42,14 @@ pip install PyQt5 keyboard
 ### **3. Run the application**
 
 ```bash
-python main.py
+python src/main.py
 ```
 
 ### **4. Package the application (optional)**
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --icon=res/icon.ico main.py
+pyinstaller --onefile --icon=res/icon.ico src/main.py
 ```
 
 ---
