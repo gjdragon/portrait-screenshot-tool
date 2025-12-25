@@ -1,25 +1,44 @@
 # Changelog
+All notable changes to this project will be documented in this file.
 
-## [v1.4.0] - 2025-12-07
+## [1.5.0] - 2025-12-25
+### Changed
+- Reorganize project structure to be more GitHub-friendly
+- Move `main.py` into the `src/` directory
 
-## [v1.4.0] - 2025-12-07
 ### Added
-- 1.feat: Make capture rectangle resizable with live dimension updates
-	update the GUI showing the region, update the width and height values
+- Application icon (`icon.ico`)
+- Screenshot (`screenshot.png`) under `res/`
 
-## [v1.3.0] - 2025-12-07
+---
+
+## [1.4.0] - 2025-12-07
 ### Added
-- 1.feat: Add clipboard copy option with checkbox
+- Resizable capture rectangle with live dimension updates
+- Visual region overlay during selection
+- Dynamic width and height display
 
-## [v1.2.0] - 2025-12-07
+---
+
+## [1.3.0] - 2025-12-07
 ### Added
-- 1.feat: Replace modal dialogs with auto-dismissing toast notifications. 
-- 2.feat: Improve overlay visibility - dim only outside capture area
+- Clipboard copy option via checkbox
 
-## [v1.1.0] - 2025-12-07
+---
+
+## [1.2.0] - 2025-12-07
 ### Added
-- feat: Add region memory - remember last capture location
-- 
+- Auto-dismissing toast notifications
+- Improved overlay visibility by dimming only outside the capture area
 
-## [v1.0.0] - 2025-11-15
-- Initial beta release of feature
+---
+
+## [1.1.0] - 2025-12-07
+### Added
+- Region memory to restore the last capture location
+
+---
+
+## [1.0.0] - 2025-11-15
+### Added
+- Initial beta release
