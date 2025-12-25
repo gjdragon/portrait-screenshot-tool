@@ -21,6 +21,7 @@ wheels/
 *.egg
 
 # Virtual Environment
+.venv/
 venv/
 ENV/
 env/
@@ -43,3 +44,5 @@ Thumbs.db
 Screenshots/
 *.png
 *.jpg
+
+*.spec
