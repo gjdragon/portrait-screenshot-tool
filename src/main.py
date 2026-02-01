@@ -479,6 +479,32 @@ class CaptureOverlay(QWidget):
             pass
         super().closeEvent(event)
     
+    def get_next_sequence_number(self, save_dir, prefix):
+        """
+        Scan the save directory for files matching the prefix pattern
+        and return the next sequence number.
+        Pattern: prefix1.png, prefix2.png, etc.
+        """
+        import re
+        
+        if not os.path.exists(save_dir):
+            return 1
+        
+        # Pattern to match: prefix followed by a number and .png extension
+        pattern = re.compile(rf'^{re.escape(prefix)}(\d+)\.png$', re.IGNORECASE)
+        
+        max_number = 0
+        try:
+            for filename in os.listdir(save_dir):
+                match = pattern.match(filename)
+                if match:
+                    number = int(match.group(1))
+                    max_number = max(max_number, number)
+        except Exception as e:
+            logger.warning(f"Error scanning directory for sequence numbers: {e}")
+        
+        return max_number + 1
+    
     def capture_and_save(self):
         try:
             # Release mouse and keyboard grabs BEFORE showing dialog
@@ -491,8 +517,14 @@ class CaptureOverlay(QWidget):
                                         os.path.join(os.path.expanduser('~'), 'Screenshots'))
             os.makedirs(save_dir, exist_ok=True)
             
-            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-            filename = f"Portrait_{timestamp}.png"
+            # Get the file prefix from settings
+            prefix = self.settings.get('file_prefix', 'Portrait')
+            if not prefix:  # Handle empty prefix
+                prefix = 'Portrait'
+            
+            # Get the next sequence number
+            seq_number = self.get_next_sequence_number(save_dir, prefix)
+            filename = f"{prefix}{seq_number}.png"
             filepath = os.path.join(save_dir, filename)
             
             if captured.save(filepath, 'PNG'):
@@ -616,7 +648,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool v1.5.0")
+        self.setWindowTitle("Portrait Screenshot Tool v1.6.0")
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
@@ -633,7 +665,8 @@ class PortraitScreenshotApp(QMainWindow):
             'portrait_width': 608,
             'portrait_height': 1080,
             'last_capture_rect': None,
-            'copy_to_clipboard': True
+            'copy_to_clipboard': True,
+            'file_prefix': 'Portrait'
         }
         
         try:
@@ -686,6 +719,14 @@ class PortraitScreenshotApp(QMainWindow):
         save_layout.addWidget(self.save_input, 3)
         save_layout.addWidget(browse_btn, 1)
         settings_layout.addLayout(save_layout)
+        
+        # File prefix input
+        prefix_layout = QHBoxLayout()
+        prefix_layout.addWidget(QLabel("File prefix:"))
+        self.prefix_input = QLineEdit(self.settings.get('file_prefix', 'Portrait'))
+        self.prefix_input.setPlaceholderText("e.g., picture, screenshot, image")
+        prefix_layout.addWidget(self.prefix_input)
+        settings_layout.addLayout(prefix_layout)
         
         dims_layout = QHBoxLayout()
         dims_layout.addWidget(QLabel("Width:"))
@@ -874,6 +915,7 @@ class PortraitScreenshotApp(QMainWindow):
         
         self.settings['hotkey'] = self.hotkey_input.text()
         self.settings['save_location'] = self.save_input.text()
+        self.settings['file_prefix'] = self.prefix_input.text()
         self.settings['portrait_width'] = self.width_spin.value()
         self.settings['portrait_height'] = self.height_spin.value()
         self.settings['lock_ratio'] = self.lock_ratio_checkbox.isChecked()
