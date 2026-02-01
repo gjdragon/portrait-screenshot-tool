@@ -518,13 +518,17 @@ class CaptureOverlay(QWidget):
             os.makedirs(save_dir, exist_ok=True)
             
             # Get the file prefix from settings
-            prefix = self.settings.get('file_prefix', 'Portrait')
-            if not prefix:  # Handle empty prefix
-                prefix = 'Portrait'
+            prefix = self.settings.get('file_prefix', '').strip()
             
-            # Get the next sequence number
-            seq_number = self.get_next_sequence_number(save_dir, prefix)
-            filename = f"{prefix}{seq_number}.png"
+            # If prefix is empty, use timestamp (original behavior)
+            if not prefix:
+                timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+                filename = f"Portrait_{timestamp}.png"
+            else:
+                # Use prefix with sequence number
+                seq_number = self.get_next_sequence_number(save_dir, prefix)
+                filename = f"{prefix}{seq_number}.png"
+            
             filepath = os.path.join(save_dir, filename)
             
             if captured.save(filepath, 'PNG'):
@@ -648,7 +652,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool v1.6.0")
+        self.setWindowTitle("Portrait Screenshot Tool v1.7.0")
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
@@ -666,7 +670,7 @@ class PortraitScreenshotApp(QMainWindow):
             'portrait_height': 1080,
             'last_capture_rect': None,
             'copy_to_clipboard': True,
-            'file_prefix': 'Portrait'
+            'file_prefix': ''
         }
         
         try:
@@ -723,8 +727,8 @@ class PortraitScreenshotApp(QMainWindow):
         # File prefix input
         prefix_layout = QHBoxLayout()
         prefix_layout.addWidget(QLabel("File prefix:"))
-        self.prefix_input = QLineEdit(self.settings.get('file_prefix', 'Portrait'))
-        self.prefix_input.setPlaceholderText("e.g., picture, screenshot, image")
+        self.prefix_input = QLineEdit(self.settings.get('file_prefix', ''))
+        self.prefix_input.setPlaceholderText("Leave empty for timestamp, or enter prefix (e.g., picture, screenshot)")
         prefix_layout.addWidget(self.prefix_input)
         settings_layout.addLayout(prefix_layout)
         

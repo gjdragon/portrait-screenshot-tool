@@ -1,6 +1,28 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-02-01
+
+1. **File Prefix Setting (Optional)**
+   - Added a new "File prefix" field in the UI
+   - **Default behavior**: Leave empty to use timestamp naming (original feature preserved)
+   - **Custom prefix**: Enter a prefix like "picture", "screenshot", "image" to use sequential numbering
+
+2. **Two Naming Modes**
+
+   **Mode 1: Timestamp (Default - when prefix is empty)**
+   - Filenames: `Portrait_2024-02-01_14-30-45.png`
+   - This is the original behavior - keeps working as before
+   
+   **Mode 2: Sequential Numbering (when you enter a prefix)**
+   - Filenames: `{prefix}1.png`, `{prefix}2.png`, `{prefix}3.png`, etc.
+   - For example, with prefix "picture": `picture1.png`, `picture2.png`, `picture3.png`
+
+3. **Smart Sequence Detection**
+   - When using a custom prefix, the app scans the save folder
+   - Finds the highest number used with your current prefix
+   - Automatically uses the next number in sequence
+   - If you delete old screenshots, the numbering adjusts dynamically
 
 ## [1.6.0] - 2026-02-01
 
