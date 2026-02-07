@@ -139,10 +139,17 @@ class CaptureOverlay(QWidget):
     def get_valid_last_region(self, width, height):
         """
         Check if the last captured region is still valid for current screen setup.
+        Uses separate storage for portrait (9:16) and landscape (16:9) modes.
         Returns a QRect adjusted for current screen geometry, or None if invalid.
         """
         try:
-            last_rect_data = self.settings.get('last_capture_rect')
+            # Determine which mode we're in based on dimensions
+            ratio_mode = '9:16' if width < height else '16:9'
+            
+            # Get the appropriate last region key
+            region_key = f'last_capture_rect_{ratio_mode}'
+            last_rect_data = self.settings.get(region_key)
+            
             if not last_rect_data:
                 return None
             
@@ -153,7 +160,6 @@ class CaptureOverlay(QWidget):
             
             # Check if dimensions match current settings
             if last_w != width or last_h != height:
-                logger.info(f"Last region dimensions mismatch: {last_w}x{last_h} vs {width}x{height}")
                 return None
             
             last_rect = QRect(last_x, last_y, last_w, last_h)
@@ -164,15 +170,14 @@ class CaptureOverlay(QWidget):
                 if last_rect.intersects(screen_geom):
                     # Clamp to ensure it stays within full desktop bounds
                     valid_rect = self.clamp_rect_to_desktop(last_rect)
-                    logger.info(f"Last region is valid on screen: {screen_geom}")
                     return valid_rect
             
-            logger.info("Last region doesn't overlap with any current screen")
             return None
             
         except Exception as e:
             logger.warning(f"Error validating last region: {e}")
             return None
+
     
     def clamp_rect_to_desktop(self, rect):
         """Clamp a rectangle to fit within the full desktop bounds"""
@@ -630,7 +635,7 @@ class CaptureOverlay(QWidget):
         QTimer.singleShot(duration, close_toast)
     
     def save_capture_region(self):
-        """Save the current capture region to settings (position only)"""
+        """Save the current capture region to settings (separate for portrait/landscape)"""
         try:
             rect_data = {
                 'x': self.capture_rect.x(),
@@ -638,8 +643,13 @@ class CaptureOverlay(QWidget):
                 'width': self.capture_rect.width(),
                 'height': self.capture_rect.height()
             }
-            self.settings['last_capture_rect'] = rect_data
-            logger.info(f"Saved capture region: {rect_data}")
+            
+            # Determine ratio mode based on dimensions
+            ratio_mode = '9:16' if self.capture_rect.width() < self.capture_rect.height() else '16:9'
+            region_key = f'last_capture_rect_{ratio_mode}'
+            
+            self.settings[region_key] = rect_data
+            logger.info(f"Saved {ratio_mode} capture region: {rect_data}")
         except Exception as e:
             logger.error(f"Error saving capture region: {e}")
 
@@ -832,14 +842,20 @@ class PortraitScreenshotApp(QMainWindow):
         central_widget.setLayout(layout)
     
     def update_last_region_label(self):
-        """Update label showing last capture region status"""
-        last_rect = self.settings.get('last_capture_rect')
-        if last_rect:
-            self.last_region_label.setText(
-                f"Last region remembered: {last_rect['width']} × {last_rect['height']} px at ({last_rect['x']}, {last_rect['y']})"
-            )
+        """Update label showing last capture region status for both modes"""
+        portrait_rect = self.settings.get('last_capture_rect_9:16')
+        landscape_rect = self.settings.get('last_capture_rect_16:9')
+        
+        labels = []
+        if portrait_rect:
+            labels.append(f"Portrait (9:16): {portrait_rect['width']}×{portrait_rect['height']} at ({portrait_rect['x']}, {portrait_rect['y']})")
+        if landscape_rect:
+            labels.append(f"Landscape (16:9): {landscape_rect['width']}×{landscape_rect['height']} at ({landscape_rect['x']}, {landscape_rect['y']})")
+        
+        if labels:
+            self.last_region_label.setText("Last regions: " + " | ".join(labels))
         else:
-            self.last_region_label.setText("No previous capture region saved")
+            self.last_region_label.setText("No previous capture regions saved")
     
     def browse_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Save Location")
@@ -887,7 +903,7 @@ class PortraitScreenshotApp(QMainWindow):
                 self.on_width_changed(self.width_spin.value())
         
         self.update_ratio_label()
-    
+            
     def on_ratio_mode_changed(self, checked):
         """Handle ratio mode change (9:16 or 16:9) with default dimensions"""
         if not checked:  # Skip when button is being unchecked
