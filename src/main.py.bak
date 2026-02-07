@@ -769,7 +769,6 @@ class PortraitScreenshotApp(QMainWindow):
             self.ratio_16_9.setChecked(True)
         
         self.ratio_9_16.toggled.connect(self.on_ratio_mode_changed)
-        self.ratio_16_9.toggled.connect(self.on_ratio_mode_changed)
         
         ratio_lock_layout.addWidget(self.ratio_9_16)
         ratio_lock_layout.addWidget(self.ratio_16_9)
@@ -889,46 +888,18 @@ class PortraitScreenshotApp(QMainWindow):
         self.update_ratio_label()
     
     def on_ratio_mode_changed(self, checked):
-        """Handle ratio mode change (9:16 or 16:9) with default dimensions"""
-        if not checked:  # Skip when button is being unchecked
-            return
-        
-        # Temporarily store and disable ratio lock to prevent interference
-        was_locked = self.settings.get('lock_ratio', True)
-        self.settings['lock_ratio'] = False
-        
-        # Block signals on both spin boxes
-        self.width_spin.blockSignals(True)
-        self.height_spin.blockSignals(True)
-        
-        if self.ratio_9_16.isChecked():
-            self.settings['ratio_mode'] = '9:16'
-            # Set portrait mode defaults: 607x1080
-            default_width = 607
-            default_height = 1080
-        else:
-            self.settings['ratio_mode'] = '16:9'
-            # Set landscape mode defaults: 1920x1080
-            default_width = 1920
-            default_height = 1080
-        
-        # Update the spin boxes with default values
-        self.width_spin.setValue(default_width)
-        self.height_spin.setValue(default_height)
-        
-        # Update settings
-        self.settings['portrait_width'] = default_width
-        self.settings['portrait_height'] = default_height
-        
-        # Restore ratio lock
-        self.settings['lock_ratio'] = was_locked
-        
-        # Unblock signals
-        self.width_spin.blockSignals(False)
-        self.height_spin.blockSignals(False)
-        
-        self.update_ratio_label()
-
+        """Handle ratio mode change (9:16 or 16:9)"""
+        if checked:  # Only handle when button is checked (not unchecked)
+            if self.ratio_9_16.isChecked():
+                self.settings['ratio_mode'] = '9:16'
+            else:
+                self.settings['ratio_mode'] = '16:9'
+            
+            # Adjust dimensions based on new ratio
+            if self.settings.get('lock_ratio', True):
+                self.on_width_changed(self.width_spin.value())
+            
+            self.update_ratio_label()
     
     def update_ratio_label(self):
         """Update the ratio information label"""
