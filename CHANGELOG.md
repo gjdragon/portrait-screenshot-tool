@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.8.1] - 2026-02-07
+
+### Fixed
+- Fixed startup bug where the last captured region was not remembered until switching modes once
+  - The application now correctly saves and loads the active ratio mode (portrait/landscape) in settings
+  - On startup, the app now uses the saved `ratio_mode` to load the correct last capture region
+  - This ensures your capture area appears exactly where you left it, regardless of which mode you were using
+
+### Technical Details
+- Added `ratio_mode` and `lock_ratio` to default settings for persistence across sessions
+- Modified `get_valid_last_region` to use the saved ratio mode instead of inferring from dimensions
+- Updated `apply_settings` to ensure ratio mode is always saved when settings are applied
+
 ## [1.8.0] - 2026-02-07
 
 ### Added

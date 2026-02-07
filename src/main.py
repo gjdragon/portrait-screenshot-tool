@@ -135,7 +135,7 @@ class CaptureOverlay(QWidget):
         
         # Capture all screens
         self.capture_screens()
-    
+        
     def get_valid_last_region(self, width, height):
         """
         Check if the last captured region is still valid for current screen setup.
@@ -143,8 +143,8 @@ class CaptureOverlay(QWidget):
         Returns a QRect adjusted for current screen geometry, or None if invalid.
         """
         try:
-            # Determine which mode we're in based on dimensions
-            ratio_mode = '9:16' if width < height else '16:9'
+            # Use the ratio_mode from settings (not inferred from dimensions)
+            ratio_mode = self.settings.get('ratio_mode', '9:16')
             
             # Get the appropriate last region key
             region_key = f'last_capture_rect_{ratio_mode}'
@@ -662,7 +662,7 @@ class PortraitScreenshotApp(QMainWindow):
         self.hotkey_thread = None
         self.is_exiting = False
         
-        self.setWindowTitle("Portrait Screenshot Tool v1.7.0")
+        self.setWindowTitle("Portrait Screenshot Tool v1.8.1")
         self.setGeometry(300, 300, 450, 350)
         
         self.init_ui()
@@ -676,9 +676,11 @@ class PortraitScreenshotApp(QMainWindow):
         default_settings = {
             'hotkey': 'ctrl+shift+p',
             'save_location': os.path.join(os.path.expanduser('~'), 'Screenshots'),
-            'portrait_width': 608,
+            'portrait_width': 607,
             'portrait_height': 1080,
-            'last_capture_rect': None,
+            'ratio_mode': '9:16',  # NEW: Track current ratio mode
+            'lock_ratio': True,    # NEW: Track if ratio is locked
+            'last_capture_rect': None,  # DEPRECATED: kept for backwards compatibility
             'copy_to_clipboard': True,
             'file_prefix': ''
         }
@@ -688,9 +690,6 @@ class PortraitScreenshotApp(QMainWindow):
                 with open(settings_file, 'r') as f:
                     loaded = json.load(f)
                     default_settings.update(loaded)
-                    width = default_settings['portrait_width']
-                    height = int(width * 16 / 9)
-                    default_settings['portrait_height'] = height
         except Exception as e:
             logger.warning(f"Error loading settings: {e}")
         
