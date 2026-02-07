@@ -12,78 +12,149 @@ Designed for creators who frequently capture **9:16 (Shorts/TikTok/Reels)** or *
 
 ## Features
 
-* **Global Hotkey Capture** (default: `Ctrl + Shift + P`)
-* **Resizable & Movable Capture Overlay** with live dimensions
-* **Multi-monitor support** — captures across all screens
-* **Aspect Ratio Lock** (9:16 or 16:9) with auto-adjusting size
-* **Remembers last capture region**
-* **Auto-save to chosen directory**
-* **Optional: Copy screenshot to clipboard**
-* **Minimizes to system tray**
-* **Toast notifications** for success/error
+- 📱 **Dual Mode Support**: Switch between Portrait (9:16) and Landscape (16:9) aspect ratios
+- 🎯 **Smart Region Memory**: Remembers last capture position separately for each mode
+- 🖱️ **Interactive Overlay**: Drag and resize capture area with live preview
+- 🖥️ **Multi-Monitor**: Full support for multiple displays
+- ⌨️ **Customizable Hotkeys**: Set your preferred keyboard shortcut
+- 📋 **Auto-Clipboard**: Automatically copy screenshots to clipboard
+- 🔒 **Aspect Ratio Lock**: Maintain perfect ratios while resizing
+- 🌐 **System Tray**: Runs quietly in the background
+- ✨ **Toast Notifications**: Visual feedback on successful captures
 
----
+## Quick Start
 
-## Installation
-
-### 1. Create and activate a virtual environment
-```bash
-python -m venv .venv
-.\.venv\Scripts\activate
-```
-
-### **2. Install dependencies**
+### Installation
 
 ```bash
-python.exe -m pip install --upgrade pip
-pip install PyQt5 keyboard
-```
+# Clone the repository
+git clone https://github.com/gjdragon/portrait-screenshot-tool.git
+cd portrait-screenshot-tool
 
-### **3. Run the application**
+# Install dependencies
+pip install -r requirements.txt
 
-```bash
+# Run the application
 python src/main.py
 ```
 
-### **4. Package the application (optional)**
+### Requirements
 
-```bash
-pip install pyinstaller
-pyinstaller --onefile --icon=res/icon.ico src/main.py
+```
+PyQt5>=5.15.0
+keyboard>=0.13.5
 ```
 
----
+## Usage
 
+### Basic Workflow
 
+1. **Launch the app** - Opens in system tray
+2. **Press your hotkey** (default: `Ctrl+Shift+P`) - Opens capture overlay
+3. **Position the rectangle** - Drag to move, resize from edges
+4. **Press Enter or Click "Capture"** - Saves screenshot
+5. **Press Esc** - Cancel capture
 
-## How to Use
+### Aspect Ratio Modes
 
-1. Launch the app → it runs in the system tray
-2. Press the global hotkey to open the capture overlay
-3. Drag / resize the selection area
-4. Press **Enter** to capture, or **Esc** to cancel
-5. Screenshots are saved automatically (and copied to clipboard if enabled)
+**Portrait (9:16)** - Default: 607×1080px
+- Perfect for: YouTube Shorts, TikTok, Instagram Reels
+- Optimized for vertical video content
 
----
+**Landscape (16:9)** - Default: 1920×1080px  
+- Perfect for: YouTube videos, streaming, presentations
+- Standard Full HD resolution
 
-## Settings
+### Settings
 
-Inside the UI, you can configure:
+Access settings from the main window or system tray:
 
-* Hotkey
-* Save location
-* Width & height
-* Aspect ratio lock (9:16 or 16:9)
-* Clipboard behavior
-* See last captured region
+- **Hotkey**: Customize your capture shortcut
+- **Save Location**: Choose where screenshots are saved
+- **File Prefix**: Add custom prefix to filenames
+- **Aspect Ratio**: Lock/unlock ratio, switch between modes
+- **Clipboard**: Toggle auto-copy to clipboard
 
-Settings persist across sessions in
-`~/.portrait_screenshot_settings.json`.
+## Default Hotkeys
 
----
+| Action | Hotkey |
+|--------|--------|
+| Capture Screenshot | `Ctrl+Shift+P` (customizable) |
+| Confirm Capture | `Enter` or `Click` |
+| Cancel Capture | `Esc` |
+
+## Smart Features
+
+### Region Memory
+The app remembers your last capture position **separately** for each mode:
+- Switch to Portrait → Rectangle appears at your last portrait position
+- Switch to Landscape → Rectangle appears at your last landscape position
+- No need to reposition every time!
+
+### Auto-Sizing
+When you switch modes, dimensions automatically update:
+- Portrait mode → 607×1080px
+- Landscape mode → 1920×1080px
+- Fully customizable if you need different sizes
+
+## File Naming
+
+Screenshots are saved with timestamps:
+```
+[prefix]_screenshot_2025-02-07_143052.png
+```
+
+Default location: `~/Screenshots/`
+
+## Configuration
+
+Settings are stored in:
+```
+~/.portrait_screenshot_settings.json
+```
+
+Manual editing supported for advanced users.
+
+## Troubleshooting
+
+**Hotkey not working?**
+- Check if another app is using the same hotkey
+- Try a different combination in settings
+- Run with administrator/sudo privileges if needed
+
+**Capture area not appearing?**
+- Ensure the app has screen recording permissions (macOS)
+- Check if overlay is behind other windows (try Alt+Tab)
+
+**Wrong screen captured?**
+- Move mouse to desired screen before pressing hotkey
+- The overlay appears on the screen containing your cursor
+
+### Contributing
+
+Contributions welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
 
 ## License
 
-MIT License.
+MIT License - See LICENSE file for details
+
+## Support
+
+- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/gjdragon/portrait-screenshot-tool/issues)
+- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/gjdragon/portrait-screenshot-tool/discussions)
+
+## Acknowledgments
+
+Built with:
 
 ---
+
+**Made with ❤️ for content creators**
